@@ -87,6 +87,7 @@ async def _ensure_admin_user(app: FastAPI) -> None:
 
             age = time.time() - admin.created_at.replace(tzinfo=UTC).timestamp()
             if age >= 30:
+                from app.gateway.auth.credential_file import write_initial_credentials
                 from app.gateway.auth.password import hash_password_async
 
                 password = secrets.token_urlsafe(16)
@@ -94,10 +95,10 @@ async def _ensure_admin_user(app: FastAPI) -> None:
                 admin.token_version += 1
                 await provider.update_user(admin)
 
+                cred_path = write_initial_credentials(admin.email, password, label="reset")
                 logger.info("=" * 60)
                 logger.info("  Admin account setup incomplete — password reset")
-                logger.info("  Email:    %s", admin.email)
-                logger.info("  Password: %s", password)
+                logger.info("  Credentials written to: %s (mode 0600)", cred_path)
                 logger.info("  Change it after login: Settings -> Account")
                 logger.info("=" * 60)
 
@@ -119,10 +120,12 @@ async def _ensure_admin_user(app: FastAPI) -> None:
             logger.exception("LangGraph thread migration failed (non-fatal)")
 
     if fresh_admin_created:
+        from app.gateway.auth.credential_file import write_initial_credentials
+
+        cred_path = write_initial_credentials(admin.email, password, label="initial")  # noqa: F821 — defined in the fresh_admin branch
         logger.info("=" * 60)
         logger.info("  Admin account created on first boot")
-        logger.info("  Email:    %s", admin.email)
-        logger.info("  Password: %s", password)  # noqa: F821 — defined in the fresh_admin branch
+        logger.info("  Credentials written to: %s (mode 0600)", cred_path)
         logger.info("  Change it after login: Settings -> Account")
         logger.info("=" * 60)
 
