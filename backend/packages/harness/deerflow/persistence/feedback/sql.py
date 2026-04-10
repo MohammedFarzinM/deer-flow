@@ -162,6 +162,44 @@ class FeedbackRepository:
             await session.refresh(row)
             return self._row_to_dict(row)
 
+    async def delete_by_run(
+        self,
+        *,
+        thread_id: str,
+        run_id: str,
+        user_id: str | None | _AutoSentinel = AUTO,
+    ) -> bool:
+        """Delete the current user's feedback for a run. Returns True if a record was deleted."""
+        resolved_user_id = resolve_user_id(user_id, method_name="FeedbackRepository.delete_by_run")
+        async with self._sf() as session:
+            stmt = select(FeedbackRow).where(
+                FeedbackRow.thread_id == thread_id,
+                FeedbackRow.run_id == run_id,
+                FeedbackRow.user_id == resolved_user_id,
+            )
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
+            if row is None:
+                return False
+            await session.delete(row)
+            await session.commit()
+            return True
+
+    async def list_by_thread_grouped(
+        self,
+        thread_id: str,
+        *,
+        user_id: str | None | _AutoSentinel = AUTO,
+    ) -> dict[str, dict]:
+        """Return feedback grouped by run_id for a thread: {run_id: feedback_dict}."""
+        resolved_user_id = resolve_user_id(user_id, method_name="FeedbackRepository.list_by_thread_grouped")
+        stmt = select(FeedbackRow).where(FeedbackRow.thread_id == thread_id)
+        if resolved_user_id is not None:
+            stmt = stmt.where(FeedbackRow.user_id == resolved_user_id)
+        async with self._sf() as session:
+            result = await session.execute(stmt)
+            return {row.run_id: self._row_to_dict(row) for row in result.scalars()}
+
     async def aggregate_by_run(self, thread_id: str, run_id: str) -> dict:
         """Aggregate feedback stats for a run using database-side counting."""
         stmt = select(

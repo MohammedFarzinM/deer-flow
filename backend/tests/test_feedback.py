@@ -190,6 +190,44 @@ class TestFeedbackRepository:
             await repo.upsert(run_id="r1", thread_id="t1", rating=0, user_id="u1")
         await _cleanup()
 
+    @pytest.mark.anyio
+    async def test_delete_by_run(self, tmp_path):
+        repo = await _make_feedback_repo(tmp_path)
+        await repo.upsert(run_id="r1", thread_id="t1", rating=1, user_id="u1")
+        deleted = await repo.delete_by_run(thread_id="t1", run_id="r1", user_id="u1")
+        assert deleted is True
+        results = await repo.list_by_run("t1", "r1", user_id="u1")
+        assert len(results) == 0
+        await _cleanup()
+
+    @pytest.mark.anyio
+    async def test_delete_by_run_nonexistent(self, tmp_path):
+        repo = await _make_feedback_repo(tmp_path)
+        deleted = await repo.delete_by_run(thread_id="t1", run_id="r1", user_id="u1")
+        assert deleted is False
+        await _cleanup()
+
+    @pytest.mark.anyio
+    async def test_list_by_thread_grouped(self, tmp_path):
+        repo = await _make_feedback_repo(tmp_path)
+        await repo.upsert(run_id="r1", thread_id="t1", rating=1, user_id="u1")
+        await repo.upsert(run_id="r2", thread_id="t1", rating=-1, user_id="u1")
+        await repo.upsert(run_id="r3", thread_id="t2", rating=1, user_id="u1")
+        grouped = await repo.list_by_thread_grouped("t1", user_id="u1")
+        assert "r1" in grouped
+        assert "r2" in grouped
+        assert "r3" not in grouped
+        assert grouped["r1"]["rating"] == 1
+        assert grouped["r2"]["rating"] == -1
+        await _cleanup()
+
+    @pytest.mark.anyio
+    async def test_list_by_thread_grouped_empty(self, tmp_path):
+        repo = await _make_feedback_repo(tmp_path)
+        grouped = await repo.list_by_thread_grouped("t1", user_id="u1")
+        assert grouped == {}
+        await _cleanup()
+
 
 # -- Follow-up association --
 
