@@ -1,6 +1,7 @@
 """Memory storage providers."""
 
 import abc
+import errno
 import json
 import logging
 import threading
@@ -67,6 +68,7 @@ class FileMemoryStorage(MemoryStorage):
         # Per-agent memory cache: keyed by agent_name (None = global)
         # Value: (memory_data, file_mtime)
         self._memory_cache: dict[str | None, tuple[dict[str, Any], float | None]] = {}
+        self._disabled_targets: set[str | None] = set()
         # Guards all reads and writes to _memory_cache across concurrent callers.
         self._cache_lock = threading.Lock()
 
@@ -108,6 +110,27 @@ class FileMemoryStorage(MemoryStorage):
             logger.warning("Failed to load memory file: %s", e)
             return create_empty_memory()
 
+    @staticmethod
+    def _is_hard_write_error(error: OSError) -> bool:
+        if error.errno in {errno.EROFS, errno.EACCES, errno.EPERM}:
+            return True
+        message = str(error).lower()
+        return "read-only file system" in message or "permission denied" in message
+
+    def _disable_target(self, agent_name: str | None, file_path: Path, error: OSError) -> None:
+        with self._cache_lock:
+            if agent_name in self._disabled_targets:
+                return
+            self._disabled_targets.add(agent_name)
+
+        target = f"agent {agent_name!r}" if agent_name is not None else "global memory"
+        logger.warning(
+            "Disabling memory persistence for %s after unwritable path %s: %s",
+            target,
+            file_path,
+            error,
+        )
+
     def load(self, agent_name: str | None = None) -> dict[str, Any]:
         """Load memory data (cached with file modification time check)."""
         file_path = self._get_memory_file_path(agent_name)
@@ -147,6 +170,10 @@ class FileMemoryStorage(MemoryStorage):
         """Save memory data to file and update cache."""
         file_path = self._get_memory_file_path(agent_name)
 
+        with self._cache_lock:
+            if agent_name in self._disabled_targets:
+                return False
+
         try:
             file_path.parent.mkdir(parents=True, exist_ok=True)
             # Shallow-copy before adding lastUpdated so the caller's dict is not
@@ -170,6 +197,9 @@ class FileMemoryStorage(MemoryStorage):
             logger.info("Memory saved to %s", file_path)
             return True
         except OSError as e:
+            if self._is_hard_write_error(e):
+                self._disable_target(agent_name, file_path, e)
+                return False
             logger.error("Failed to save memory file: %s", e)
             return False
 

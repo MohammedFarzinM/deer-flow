@@ -164,6 +164,27 @@ class TestFileMemoryStorage:
                 after = storage.load()
                 assert after["facts"][0]["content"] == "original"
 
+    def test_save_stops_retrying_after_read_only_filesystem_error(self, tmp_path):
+        """Read-only targets should be disabled after the first hard failure."""
+        memory_file = tmp_path / "agents" / "neo-research" / "memory.json"
+
+        def mock_get_paths():
+            mock_paths = MagicMock()
+            mock_paths.agent_memory_file.return_value = memory_file
+            return mock_paths
+
+        readonly_error = OSError(30, "Read-only file system")
+
+        with patch("deerflow.agents.memory.storage.get_paths", side_effect=mock_get_paths):
+            storage = FileMemoryStorage()
+            with patch("builtins.open", side_effect=readonly_error) as open_mock:
+                first = storage.save({"version": "1.0", "facts": []}, agent_name="neo-research")
+                second = storage.save({"version": "1.0", "facts": []}, agent_name="neo-research")
+
+        assert first is False
+        assert second is False
+        assert open_mock.call_count == 1
+
     def test_cache_thread_safety(self, tmp_path):
         """Concurrent load/reload calls must not race on _memory_cache."""
         memory_file = tmp_path / "memory.json"
