@@ -9,6 +9,7 @@ from deerflow.agents.middlewares.todo_middleware import (
     TodoMiddleware,
     _completion_reminder_count,
     _format_todos,
+    _is_research_mode,
     _reminder_in_messages,
     _todos_in_messages,
 )
@@ -25,6 +26,12 @@ def _reminder_msg():
 def _make_runtime():
     runtime = MagicMock()
     runtime.context = {"thread_id": "test-thread"}
+    return runtime
+
+
+def _make_research_runtime():
+    runtime = MagicMock()
+    runtime.context = {"thread_id": "test-thread", "research_mode": True}
     return runtime
 
 
@@ -89,6 +96,12 @@ class TestFormatTodos:
         result = _format_todos(todos)
         assert "- [pending] No status" in result
         assert "- [done] " in result
+
+
+class TestResearchMode:
+    def test_detects_research_mode(self):
+        assert _is_research_mode(_make_research_runtime()) is True
+        assert _is_research_mode(_make_runtime()) is False
 
 
 class TestBeforeModel:
@@ -287,6 +300,25 @@ class TestAfterModel:
         result = mw.after_model(state, _make_runtime())
         assert result is not None
         assert result["jump_to"] == "model"
+
+    def test_research_mode_allows_exit_when_conclusion_is_present(self):
+        mw = TodoMiddleware()
+        state = {
+            "messages": [AIMessage(content="## CONCLUSION\nFocus on GCC first.")],
+            "todos": _incomplete_todos(),
+        }
+        assert mw.after_model(state, _make_research_runtime()) is None
+
+    def test_research_mode_uses_lower_reminder_cap(self):
+        mw = TodoMiddleware()
+        state = {
+            "messages": [
+                _completion_reminder_msg(),
+                _ai_no_tool_calls(),
+            ],
+            "todos": _incomplete_todos(),
+        }
+        assert mw.after_model(state, _make_research_runtime()) is None
 
 
 class TestAafterModel:

@@ -13,6 +13,7 @@ and jumps back to the model node to force continued engagement.
 
 from __future__ import annotations
 
+import re
 from typing import Any, override
 
 from langchain.agents.middleware import TodoListMiddleware
@@ -20,6 +21,9 @@ from langchain.agents.middleware.todo import PlanningState, Todo
 from langchain.agents.middleware.types import hook_config
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.runtime import Runtime
+
+
+_CONCLUSION_RE = re.compile(r"(?is)##\s*conclusion\b")
 
 
 def _todos_in_messages(messages: list[Any]) -> bool:
@@ -53,6 +57,26 @@ def _format_todos(todos: list[Todo]) -> str:
         content = todo.get("content", "")
         lines.append(f"- [{status}] {content}")
     return "\n".join(lines)
+
+
+def _is_research_mode(runtime: Runtime) -> bool:
+    context = getattr(runtime, "context", None) or {}
+    return bool(context.get("research_mode"))
+
+
+def _message_text(message: AIMessage) -> str:
+    content = getattr(message, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and isinstance(block.get("text"), str):
+                parts.append(block["text"])
+        return "".join(parts)
+    return str(content)
 
 
 class TodoMiddleware(TodoListMiddleware):
@@ -148,8 +172,15 @@ class TodoMiddleware(TodoListMiddleware):
         if not todos or all(t.get("status") == "completed" for t in todos):
             return None
 
+        if _is_research_mode(runtime):
+            if _CONCLUSION_RE.search(_message_text(last_ai)):
+                return None
+            reminder_cap = 1
+        else:
+            reminder_cap = self._MAX_COMPLETION_REMINDERS
+
         # 4. Enforce a reminder cap to prevent infinite re-engagement loops.
-        if _completion_reminder_count(messages) >= self._MAX_COMPLETION_REMINDERS:
+        if _completion_reminder_count(messages) >= reminder_cap:
             return None
 
         # 5. Inject a reminder and force the agent back to the model.
