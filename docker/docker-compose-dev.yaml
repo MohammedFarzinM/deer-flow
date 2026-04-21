@@ -142,7 +142,7 @@ services:
       # directory above would otherwise shadow it with the (empty) host directory.
       - gateway-venv:/app/backend/.venv
       # Neo's constrained research agent (version-controlled outside .deer-flow/)
-      - ../neo-research-agent:/app/backend/.deer-flow/agents/neo-research:ro
+      - ../neo-research-agent:/app/backend/.deer-flow/agents/neo-research
       - ../config.yaml:/app/config.yaml
       - ../extensions_config.json:/app/extensions_config.json
       - ../skills:/app/skills
