@@ -75,6 +75,7 @@ def web_search_tool(
     )
 
     if not results:
+        logger.warning("DDG web_search query=%r returned no results", query)
         return json.dumps({"error": "No results found", "query": query}, ensure_ascii=False)
 
     normalized_results = [
@@ -86,6 +87,7 @@ def web_search_tool(
         for r in results
     ]
 
+    logger.info("DDG web_search query=%r results=%d", query, len(normalized_results))
     output = {
         "query": query,
         "total_results": len(normalized_results),

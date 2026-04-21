@@ -1,4 +1,4 @@
-"""Middleware for logging LLM token usage."""
+"""Middleware for logging LLM token usage and response decisions."""
 
 import logging
 from typing import override
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class TokenUsageMiddleware(AgentMiddleware):
-    """Logs token usage from model response usage_metadata."""
+    """Logs token usage and LLM response decisions from model responses."""
 
     @override
     def after_model(self, state: AgentState, runtime: Runtime) -> dict | None:
@@ -34,4 +34,19 @@ class TokenUsageMiddleware(AgentMiddleware):
                 usage.get("output_tokens", "?"),
                 usage.get("total_tokens", "?"),
             )
+
+        content = getattr(last, "content", None)
+        if content:
+            text = content if isinstance(content, str) else str(content)
+            if text.strip():
+                logger.info("LLM response text (truncated): %s", text[:800])
+
+        tool_calls = getattr(last, "tool_calls", None) or []
+        for tc in tool_calls:
+            logger.info(
+                "LLM tool call -> name=%s args=%s",
+                tc.get("name"),
+                str(tc.get("args", {}))[:300],
+            )
+
         return None

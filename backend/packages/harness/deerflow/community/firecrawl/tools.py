@@ -1,9 +1,12 @@
 import json
+import logging
 
 from firecrawl import FirecrawlApp
 from langchain.tools import tool
 
 from deerflow.config import get_app_config
+
+logger = logging.getLogger(__name__)
 
 
 def _get_firecrawl_client(tool_name: str = "web_search") -> FirecrawlApp:
@@ -40,9 +43,11 @@ def web_search_tool(query: str) -> str:
             }
             for item in web_results
         ]
+        logger.info("Firecrawl web_search query=%r results=%d", query, len(normalized_results))
         json_results = json.dumps(normalized_results, indent=2, ensure_ascii=False)
         return json_results
     except Exception as e:
+        logger.error("Firecrawl web_search FAILED query=%r error=%s", query, e)
         return f"Error: {str(e)}"
 
 
@@ -66,8 +71,11 @@ def web_fetch_tool(url: str) -> str:
         title = metadata.title if metadata and metadata.title else "Untitled"
 
         if not markdown_content:
+            logger.warning("Firecrawl web_fetch url=%r returned no content", url)
             return "Error: No content found"
     except Exception as e:
+        logger.error("Firecrawl web_fetch FAILED url=%r error=%s", url, e)
         return f"Error: {str(e)}"
 
+    logger.info("Firecrawl web_fetch url=%r content_len=%d", url, len(markdown_content))
     return f"# {title}\n\n{markdown_content[:4096]}"

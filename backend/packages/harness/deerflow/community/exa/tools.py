@@ -1,9 +1,12 @@
 import json
+import logging
 
 from exa_py import Exa
 from langchain.tools import tool
 
 from deerflow.config import get_app_config
+
+logger = logging.getLogger(__name__)
 
 
 def _get_exa_client(tool_name: str = "web_search") -> Exa:
@@ -47,9 +50,16 @@ def web_search_tool(query: str) -> str:
             }
             for result in res.results
         ]
+        logger.info(
+            "Exa web_search query=%r search_type=%r results=%d",
+            query,
+            search_type,
+            len(normalized_results),
+        )
         json_results = json.dumps(normalized_results, indent=2, ensure_ascii=False)
         return json_results
     except Exception as e:
+        logger.error("Exa web_search FAILED query=%r error=%s", query, e)
         return f"Error: {str(e)}"
 
 
@@ -72,8 +82,11 @@ def web_fetch_tool(url: str) -> str:
             result = res.results[0]
             title = result.title or "Untitled"
             text = result.text or ""
+            logger.info("Exa web_fetch url=%r content_len=%d", url, len(text))
             return f"# {title}\n\n{text[:4096]}"
         else:
+            logger.warning("Exa web_fetch url=%r returned no results", url)
             return "Error: No results found"
     except Exception as e:
+        logger.error("Exa web_fetch FAILED url=%r error=%s", url, e)
         return f"Error: {str(e)}"
